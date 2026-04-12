@@ -25,6 +25,7 @@ const strippedCode = wrappedCode
   .replace(/\(function initParticles[\s\S]*?\}\)\(\);/g, '')
   .replace(/\(function initScene[\s\S]*?\}\)\(\);/g, '')
   .replace(/\(function checkSaveOnLoad[\s\S]*?\}\)\(\);/g, '')
+  .replace(/document\.body\.addEventListener\([^)]*\)[\s\S]*?\{[^}]*\}[^)]*\);/g, '')
   .replace(/document\.\w+/g, 'null')
   .replace(/window\.\w+/g, 'null')
   .replace(/localStorage\.\w+/g, 'null')

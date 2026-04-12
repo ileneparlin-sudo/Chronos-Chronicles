@@ -541,6 +541,7 @@ body{background:var(--ink);color:var(--parchment);font-family:'EB Garamond',seri
     <div class="title-year">1899 &nbsp;·&nbsp; 1999</div>
     <div class="rift-divider"></div>
     <div class="title-tagline">"Time isn't broken.<br>It's bleeding."</div>
+    <div style="font-family:'Cinzel',serif;font-size:clamp(9px,1.1vw,11px);letter-spacing:0.5em;color:rgba(201,168,76,0.4);text-transform:uppercase;margin-top:1.5rem;opacity:0;animation:fadeIn 1s ease 2.6s forwards">A game for two, played apart</div>
     <button class="enter-btn" onclick="goToSelect()">Enter the Rift</button>
     <button class="enter-btn" id="continue-btn" onclick="loadGame()" style="display:none;margin-top:0.8rem;border-color:rgba(138,26,26,0.5);color:#d08080;animation-delay:3.2s">Continue</button>
   </div>
@@ -653,6 +654,7 @@ const SCENE_LABELS = {
 function setScene(key) {
   const src = SCENE_IMAGES[key];
   if (!src) return;
+  playSfxScene();
   document.getElementById('scene-label').textContent = SCENE_LABELS[key] || '';
 
   const curEl  = document.getElementById('scene-' + sceneActive);
@@ -690,6 +692,13 @@ function showScreen(id) {
   document.querySelectorAll('.screen').forEach(s => s.classList.add('hidden'));
   document.getElementById(id).classList.remove('hidden');
 }
+
+document.body.addEventListener('click', function() {
+  if (!audioCtx) {
+    initAudio();
+    playTheme('title');
+  }
+}, { once: true });
 
 function goToSelect() {
   showScreen('select-screen');
@@ -777,7 +786,6 @@ function initAudio() {
 }
 
 function stopTheme(cb) {
-  currentThemeName = null;
   if (!audioCtx || currentThemeNodes.length === 0) { if (cb) cb(); return; }
   masterGain.gain.cancelScheduledValues(audioCtx.currentTime);
   masterGain.gain.setTargetAtTime(0, audioCtx.currentTime, 0.4);
@@ -793,10 +801,387 @@ function playTheme(name) {
   if (!audioCtx || name === currentThemeName) return;
   currentThemeName = name;
   stopTheme(() => {
-    if      (name === 'victorian') playVictorian();
+    if      (name === 'title')     playTitleTheme();
+    else if (name === 'victorian') playVictorian();
     else if (name === 'modern')    playModern();
     else if (name === 'chamber')   playChamber();
   });
+}
+
+function pianoNote(freq, time, dur, vel) {
+  // Piano-like tone: fundamental + harmonics with realistic envelope
+  const harmonics = [1, 2, 3, 4, 5.01];
+  const volumes   = [0.48, 0.22, 0.09, 0.04, 0.015];
+  const env = audioCtx.createGain();
+  env.gain.setValueAtTime(0, time);
+  env.gain.linearRampToValueAtTime(vel, time + 0.004);
+  env.gain.setTargetAtTime(vel * 0.35, time + 0.004, 0.12);
+  env.gain.setTargetAtTime(0.001, time + dur * 0.5, dur * 0.35);
+  env.connect(masterGain);
+  harmonics.forEach((h, i) => {
+    const osc = audioCtx.createOscillator();
+    osc.type = 'sine';
+    osc.frequency.setValueAtTime(freq * h, time);
+    const g = audioCtx.createGain();
+    g.gain.setValueAtTime(volumes[i], time);
+    osc.connect(g); g.connect(env);
+    osc.start(time); osc.stop(time + dur + 0.5);
+  });
+}
+
+function playTitleTheme() {
+  if (!audioCtx) return;
+
+  // Soft reverb via feedback delay
+  const delay = audioCtx.createDelay();
+  delay.delayTime.setValueAtTime(0.18, audioCtx.currentTime);
+  const fb = audioCtx.createGain();
+  fb.gain.setValueAtTime(0.22, audioCtx.currentTime);
+  const dryWet = audioCtx.createGain();
+  dryWet.gain.setValueAtTime(0.15, audioCtx.currentTime);
+  delay.connect(fb); fb.connect(delay);
+  delay.connect(dryWet); dryWet.connect(masterGain);
+
+  // Sentinel oscillator to keep currentThemeNodes alive
+  const sentinel = audioCtx.createOscillator();
+  sentinel.type = 'sine';
+  sentinel.frequency.setValueAtTime(0, audioCtx.currentTime);
+  const zg = audioCtx.createGain();
+  zg.gain.setValueAtTime(0, audioCtx.currentTime);
+  sentinel.connect(zg); zg.connect(masterGain);
+  sentinel.start(); currentThemeNodes.push(sentinel);
+
+  // Note frequencies
+  const N = {
+    A2:110, B2:123.47, C3:130.81, D3:146.83, E3:164.81, F3:174.61,
+    G3:196, Gs3:207.65, A3:220, B3:246.94, C4:261.63, D4:293.66,
+    E4:329.63, F4:349.23, G4:392, A4:440
+  };
+
+  const b = 0.9; // beat duration (~67 BPM)
+
+  // Humanize — subtle timing and velocity variation
+  function jit() { return (Math.random() - 0.5) * 0.04; }
+  function vVar(base) { return base * (0.85 + Math.random() * 0.3); }
+
+  function scheduleA(t0) {
+    const bass = (f,t) => pianoNote(f, t+jit(), b*4, vVar(0.06));
+    const arp  = (f,t) => pianoNote(f, t+jit(), b*2.5, vVar(0.038));
+    const mel  = (f,t,d) => pianoNote(f, t+jit(), d||b*2, vVar(0.055));
+
+    // Bar 1 — Am
+    bass(N.A2, t0);
+    arp(N.E3, t0+b*0.35); arp(N.A3, t0+b*0.6); arp(N.C4, t0+b*0.85);
+    mel(N.E4, t0+b*1.1, b*2.5);
+
+    // Bar 2 — C
+    bass(N.C3, t0+b*2);
+    arp(N.G3, t0+b*2.35); arp(N.C4, t0+b*2.6); arp(N.E4, t0+b*2.85);
+    mel(N.G4, t0+b*3.1, b*2);
+
+    // Bar 3 — F
+    bass(N.F3, t0+b*4);
+    arp(N.C3, t0+b*4.35); arp(N.F3, t0+b*4.6); arp(N.A3, t0+b*4.85);
+    mel(N.D4, t0+b*5.2, b*1.5);
+    mel(N.C4, t0+b*6, b*1.5);
+
+    // Bar 4 — E
+    bass(N.E3, t0+b*6.5);
+    arp(N.B2, t0+b*6.85); arp(N.E3, t0+b*7.1); arp(N.Gs3, t0+b*7.35);
+    mel(N.B3, t0+b*7.6, b*2.5);
+
+    // Bar 5 — Am (higher)
+    bass(N.A2, t0+b*9);
+    arp(N.E3, t0+b*9.35); arp(N.A3, t0+b*9.6); arp(N.C4, t0+b*9.85);
+    mel(N.A4, t0+b*10.1, b*1.5);
+    mel(N.G4, t0+b*11, b*1.5);
+
+    // Bar 6 — G
+    bass(N.G3, t0+b*12);
+    arp(N.D3, t0+b*12.35); arp(N.G3, t0+b*12.6); arp(N.B3, t0+b*12.85);
+    mel(N.F4, t0+b*13.1, b*1.5);
+    mel(N.E4, t0+b*14, b*1.5);
+
+    // Bar 7 — Dm
+    bass(N.D3, t0+b*15);
+    arp(N.A3, t0+b*15.35); arp(N.D4, t0+b*15.6); arp(N.F4, t0+b*15.85);
+    mel(N.D4, t0+b*16.1, b*1.8);
+
+    // Bar 8 — E → Am resolve
+    bass(N.E3, t0+b*17);
+    arp(N.B2, t0+b*17.35); arp(N.E3, t0+b*17.6); arp(N.Gs3, t0+b*17.85);
+    mel(N.C4, t0+b*18, b*1.2);
+    mel(N.B3, t0+b*18.8, b*1.5);
+
+    // Resolution
+    bass(N.A2, t0+b*20);
+    arp(N.E3, t0+b*20.4); arp(N.A3, t0+b*20.7);
+    mel(N.A3, t0+b*21, b*4);
+  }
+
+  function scheduleB(t0) {
+    const bass = (f,t) => pianoNote(f, t+jit(), b*4, vVar(0.05));
+    const arp  = (f,t) => pianoNote(f, t+jit(), b*2.8, vVar(0.032));
+    const mel  = (f,t,d) => pianoNote(f, t+jit(), d||b*2, vVar(0.048));
+
+    // Bar 1 — Dm (darker opening)
+    bass(N.D3, t0);
+    arp(N.A3, t0+b*0.4); arp(N.D4, t0+b*0.7); arp(N.F4, t0+b*0.95);
+    mel(N.A4, t0+b*1.2, b*2);
+
+    // Bar 2 — Am
+    bass(N.A2, t0+b*2);
+    arp(N.E3, t0+b*2.4); arp(N.A3, t0+b*2.65); arp(N.C4, t0+b*2.9);
+    mel(N.G4, t0+b*3.2, b*1.3);
+    mel(N.E4, t0+b*4, b*1.5);
+
+    // Bar 3 — Bb (borrowed, unexpected warmth)
+    pianoNote(N.F3, t0+b*4.8+jit(), b*4, vVar(0.05));
+    arp(N.D3, t0+b*5.15); arp(N.F3, t0+b*5.4);
+    pianoNote(233.08, t0+b*5.65+jit(), b*2.5, vVar(0.032)); // Bb3
+    mel(N.D4, t0+b*6, b*1.8);
+    mel(N.C4, t0+b*7, b*1.2);
+
+    // Bar 4 — E (tension)
+    bass(N.E3, t0+b*7.5);
+    arp(N.B2, t0+b*7.85); arp(N.E3, t0+b*8.1); arp(N.Gs3, t0+b*8.35);
+    mel(N.B3, t0+b*8.7, b*3);
+
+    // Bar 5 — F → C (opening up)
+    bass(N.F3, t0+b*10);
+    arp(N.C3, t0+b*10.35); arp(N.F3, t0+b*10.6); arp(N.A3, t0+b*10.85);
+    mel(N.F4, t0+b*11.1, b*1.5);
+
+    bass(N.C3, t0+b*12);
+    arp(N.G3, t0+b*12.35); arp(N.C4, t0+b*12.6); arp(N.E4, t0+b*12.85);
+    mel(N.E4, t0+b*13.1, b*1.5);
+    mel(N.D4, t0+b*14, b*1);
+
+    // Bar 7 — G → Am (gentle descent home)
+    bass(N.G3, t0+b*15);
+    arp(N.D3, t0+b*15.35); arp(N.G3, t0+b*15.6); arp(N.B3, t0+b*15.85);
+    mel(N.D4, t0+b*16.1, b*1.2);
+    mel(N.C4, t0+b*16.8, b*1.2);
+    mel(N.B3, t0+b*17.5, b*1.5);
+
+    // Bar 8 — Am (resolve, quieter)
+    pianoNote(N.A2, t0+b*19+jit(), b*5, vVar(0.045));
+    pianoNote(N.E3, t0+b*19.5+jit(), b*4, vVar(0.025));
+    pianoNote(N.A3, t0+b*19.9+jit(), b*4, vVar(0.025));
+    mel(N.A3, t0+b*20.5, b*4);
+  }
+
+  const phraseLen = b * 24;
+  let section = 0;
+
+  function loop() {
+    if (currentThemeNodes.length === 0) return;
+    if (section % 2 === 0) scheduleA(audioCtx.currentTime + 0.1);
+    else scheduleB(audioCtx.currentTime + 0.1);
+    section++;
+    setTimeout(loop, phraseLen * 1000);
+  }
+
+  loop();
+  masterGain.gain.setValueAtTime(0, audioCtx.currentTime);
+  masterGain.gain.linearRampToValueAtTime(0.35, audioCtx.currentTime + 2);
+}
+
+// Sound effects
+function playSfxChoice() {
+  if (!audioCtx) return;
+  const t = audioCtx.currentTime;
+  const osc = audioCtx.createOscillator();
+  osc.type = 'sine';
+  osc.frequency.setValueAtTime(440, t);
+  osc.frequency.setTargetAtTime(520, t, 0.06);
+  const g = audioCtx.createGain();
+  g.gain.setValueAtTime(0.06, t);
+  g.gain.exponentialRampToValueAtTime(0.001, t + 0.3);
+  osc.connect(g); g.connect(audioCtx.destination);
+  osc.start(t); osc.stop(t + 0.35);
+}
+
+function playSfxScene() {
+  if (!audioCtx) return;
+  const t = audioCtx.currentTime;
+  [260, 390, 520].forEach((f, i) => {
+    const osc = audioCtx.createOscillator();
+    osc.type = 'sine';
+    osc.frequency.setValueAtTime(f, t + i * 0.08);
+    const g = audioCtx.createGain();
+    g.gain.setValueAtTime(0, t + i * 0.08);
+    g.gain.linearRampToValueAtTime(0.03, t + i * 0.08 + 0.02);
+    g.gain.exponentialRampToValueAtTime(0.001, t + i * 0.08 + 0.8);
+    osc.connect(g); g.connect(audioCtx.destination);
+    osc.start(t + i * 0.08); osc.stop(t + i * 0.08 + 0.9);
+  });
+}
+
+function playSfxWorldEvent() {
+  if (!audioCtx) return;
+  const t = audioCtx.currentTime;
+  const osc = audioCtx.createOscillator();
+  osc.type = 'sine';
+  osc.frequency.setValueAtTime(330, t);
+  osc.frequency.linearRampToValueAtTime(440, t + 0.6);
+  const g = audioCtx.createGain();
+  g.gain.setValueAtTime(0, t);
+  g.gain.linearRampToValueAtTime(0.05, t + 0.1);
+  g.gain.exponentialRampToValueAtTime(0.001, t + 1.5);
+  osc.connect(g); g.connect(audioCtx.destination);
+  osc.start(t); osc.stop(t + 1.6);
+}
+
+function playSfxGlassShatter() {
+  if (!audioCtx) return;
+  const t = audioCtx.currentTime;
+  for (let i = 0; i < 8; i++) {
+    const f = 800 + Math.random() * 4000;
+    const osc = audioCtx.createOscillator();
+    osc.type = 'sine';
+    osc.frequency.setValueAtTime(f, t + i * 0.03);
+    osc.frequency.exponentialRampToValueAtTime(f * 0.3, t + i * 0.03 + 0.4);
+    const g = audioCtx.createGain();
+    g.gain.setValueAtTime(0.04, t + i * 0.03);
+    g.gain.exponentialRampToValueAtTime(0.001, t + i * 0.03 + 0.5 + Math.random() * 0.3);
+    osc.connect(g); g.connect(audioCtx.destination);
+    osc.start(t + i * 0.03); osc.stop(t + i * 0.03 + 1);
+  }
+}
+
+function playSfxSilence() {
+  if (!audioCtx) return;
+  const t = audioCtx.currentTime;
+  const osc = audioCtx.createOscillator();
+  osc.type = 'sine';
+  osc.frequency.setValueAtTime(220, t);
+  osc.frequency.exponentialRampToValueAtTime(55, t + 3);
+  const g = audioCtx.createGain();
+  g.gain.setValueAtTime(0.06, t);
+  g.gain.exponentialRampToValueAtTime(0.001, t + 3.5);
+  osc.connect(g); g.connect(audioCtx.destination);
+  osc.start(t); osc.stop(t + 4);
+}
+
+// Ending music — Reach (full, warm, ascending)
+function playEndingReach() {
+  if (!audioCtx) return;
+  currentThemeName = 'ending_reach';
+  const N = {
+    A2:110, C3:130.81, D3:146.83, E3:164.81, F3:174.61, G3:196,
+    A3:220, B3:246.94, C4:261.63, D4:293.66, E4:329.63, F4:349.23,
+    G4:392, A4:440, B4:493.88, C5:523.25, D5:587.33, E5:659.25
+  };
+  const b = 1.1;
+  function jit() { return (Math.random() - 0.5) * 0.035; }
+  function v(base) { return base * (0.9 + Math.random() * 0.2); }
+  const p = (f,t,d,vel) => pianoNote(f, t+jit(), d, v(vel));
+
+  const sentinel = audioCtx.createOscillator();
+  sentinel.frequency.setValueAtTime(0, audioCtx.currentTime);
+  const zg = audioCtx.createGain();
+  zg.gain.setValueAtTime(0, audioCtx.currentTime);
+  sentinel.connect(zg); zg.connect(masterGain);
+  sentinel.start(); currentThemeNodes.push(sentinel);
+
+  const t0 = audioCtx.currentTime + 0.5;
+
+  // Phrase 1 — Am, ascending with hope (fuller chords)
+  p(N.A2, t0, b*4, 0.06);
+  p(N.E3, t0+b*0.3, b*3, 0.04); p(N.A3, t0+b*0.55, b*3, 0.04); p(N.C4, t0+b*0.8, b*3, 0.04);
+  p(N.E4, t0+b*1.1, b*2.5, 0.06);
+
+  // C major — opening up
+  p(N.C3, t0+b*2.5, b*4, 0.06);
+  p(N.G3, t0+b*2.8, b*3, 0.04); p(N.C4, t0+b*3.05, b*3, 0.04); p(N.E4, t0+b*3.3, b*3, 0.04);
+  p(N.G4, t0+b*3.6, b*2.5, 0.06);
+
+  // F — warmth
+  p(N.F3, t0+b*5, b*4, 0.055);
+  p(N.C3, t0+b*5.3, b*3, 0.035); p(N.F3, t0+b*5.55, b*3, 0.035); p(N.A3, t0+b*5.8, b*3, 0.04);
+  p(N.A4, t0+b*6.1, b*2, 0.06);
+  p(N.G4, t0+b*7.2, b*1.5, 0.05);
+
+  // G — lifting
+  p(N.G3, t0+b*8, b*4, 0.055);
+  p(N.D3, t0+b*8.3, b*3, 0.035); p(N.G3, t0+b*8.55, b*3, 0.035); p(N.B3, t0+b*8.8, b*3, 0.04);
+  p(N.B4, t0+b*9.1, b*2, 0.06);
+
+  // Phrase 2 — climbing higher
+  // Am
+  p(N.A2, t0+b*11, b*4, 0.065);
+  p(N.E3, t0+b*11.3, b*3, 0.04); p(N.A3, t0+b*11.55, b*3, 0.04); p(N.C4, t0+b*11.8, b*3, 0.045);
+  p(N.C5, t0+b*12.1, b*2, 0.058);
+  p(N.B4, t0+b*13, b*1.5, 0.05);
+
+  // F — reaching
+  p(N.F3, t0+b*14, b*4, 0.06);
+  p(N.C3, t0+b*14.3, b*3, 0.038); p(N.F3, t0+b*14.55, b*3, 0.038); p(N.A3, t0+b*14.8, b*3, 0.04);
+  p(N.D5, t0+b*15.1, b*2.5, 0.06);
+
+  // C — the peak
+  p(N.C3, t0+b*17, b*5, 0.065);
+  p(N.G3, t0+b*17.35, b*4, 0.04); p(N.C4, t0+b*17.6, b*4, 0.04); p(N.E4, t0+b*17.85, b*4, 0.045);
+  p(N.E5, t0+b*18.2, b*3, 0.065); // highest note — the moment they touch
+
+  // Resolve — Am, gently descending home
+  p(N.A2, t0+b*21, b*6, 0.055);
+  p(N.E3, t0+b*21.4, b*5, 0.035); p(N.A3, t0+b*21.7, b*5, 0.035);
+  p(N.C5, t0+b*22, b*2, 0.048);
+  p(N.A4, t0+b*23.2, b*2, 0.042);
+  p(N.E4, t0+b*24.5, b*3, 0.038);
+  p(N.A3, t0+b*26, b*6, 0.04); // final note, long decay
+
+  masterGain.gain.setValueAtTime(0.1, audioCtx.currentTime);
+  masterGain.gain.linearRampToValueAtTime(0.38, audioCtx.currentTime + 3);
+  masterGain.gain.setValueAtTime(0.38, t0 + b*24);
+  masterGain.gain.linearRampToValueAtTime(0.08, t0 + b*30);
+}
+
+// Ending music — Close (sparse, descending, fading to silence)
+function playEndingClose() {
+  if (!audioCtx) return;
+  currentThemeName = 'ending_close';
+  const N = {
+    A2:110, E3:164.81, A3:220, B3:246.94, C4:261.63, D4:293.66,
+    E4:329.63, A4:440
+  };
+  const b = 1.4; // slower
+  function jit() { return (Math.random() - 0.5) * 0.05; }
+  const p = (f,t,d,vel) => pianoNote(f, t+jit(), d, vel);
+
+  const sentinel = audioCtx.createOscillator();
+  sentinel.frequency.setValueAtTime(0, audioCtx.currentTime);
+  const zg = audioCtx.createGain();
+  zg.gain.setValueAtTime(0, audioCtx.currentTime);
+  sentinel.connect(zg); zg.connect(masterGain);
+  sentinel.start(); currentThemeNodes.push(sentinel);
+
+  const t0 = audioCtx.currentTime + 1.5; // pause before it begins
+
+  // Single notes, descending, each quieter than the last
+  p(N.E4, t0, b*4, 0.05);
+
+  p(N.D4, t0+b*2.5, b*4, 0.045);
+
+  p(N.C4, t0+b*5, b*4, 0.04);
+
+  p(N.B3, t0+b*8, b*4, 0.035);
+
+  // Bass note arrives, very soft
+  p(N.A2, t0+b*10.5, b*6, 0.03);
+  p(N.A3, t0+b*11, b*5, 0.03);
+
+  p(N.E3, t0+b*14, b*5, 0.025);
+
+  // Final note — the lowest, the quietest, the longest
+  p(N.A2, t0+b*17, b*10, 0.02);
+
+  masterGain.gain.setValueAtTime(0.1, audioCtx.currentTime);
+  masterGain.gain.linearRampToValueAtTime(0.3, audioCtx.currentTime + 2);
+  masterGain.gain.setValueAtTime(0.3, t0 + b*14);
+  masterGain.gain.linearRampToValueAtTime(0, t0 + b*25); // fade to true silence
 }
 
 function playVictorian() {
@@ -1006,6 +1391,7 @@ function renderWorldEffects(patch) {
 function addWorldEcho(text) {
   const story = document.getElementById('g-story');
   if (!story) return;
+  playSfxWorldEvent();
   const el = document.createElement('div');
   el.className = 's-block s-world-event';
   el.innerHTML = `<p>${text}</p>`;
@@ -1065,7 +1451,7 @@ Yet.`,
   },
   vivienne: {
     opening: {
-      scene: 'town_1999',
+      scene: 'post_office',
       text: `Blackthorn has been abandoned since 1953. The official records say plague. The locals — the ones who will still talk — say something worse.
 
 You arrived this morning with a press pass and bad coffee. What you found in the ruins of the Post Office stopped you at the door.
@@ -2144,7 +2530,7 @@ function showChoices(choices) {
       const btn = document.createElement('button');
       btn.className   = 'c-btn';
       btn.textContent = choice.text;
-      btn.onclick     = () => choose(choice);
+      btn.onclick     = () => { playSfxChoice(); choose(choice); };
       container.appendChild(btn);
     });
   }
@@ -2282,6 +2668,8 @@ function resolveFinalChoice(myChoice, partnerChoice) {
 
   if (myChoice === partnerChoice) {
     // Agreement — navigate to ending
+    if (myChoice === 'reach') { playSfxGlassShatter(); stopTheme(() => playEndingReach()); }
+    else { playSfxSilence(); stopTheme(() => playEndingClose()); }
     const endingKey = myChoice === 'reach' ? 'ending_reach' : 'ending_close';
     const branch = BRANCHES[endingKey];
     currentBranch = endingKey;
