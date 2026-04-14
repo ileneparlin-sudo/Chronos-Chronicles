@@ -500,6 +500,32 @@ body{background:var(--ink);color:var(--parchment);font-family:'EB Garamond',seri
   color:#9a8868;
 }
 
+/* ── ENDING VISUAL SHIFTS ── */
+.game-shell.ending-reach{
+  background:rgba(255,250,240,0.92) !important;
+  transition:background 4s ease;
+}
+.game-shell.ending-reach .s-narrate{color:#2a1a0a}
+.game-shell.ending-reach .s-narrate p{border-left-color:rgba(201,168,76,0.6)}
+.game-shell.ending-reach .g-header{border-bottom-color:rgba(201,168,76,0.3)}
+.game-shell.ending-reach .keepsake-line{color:#5a4530}
+
+.game-shell.ending-close{
+  background:rgba(0,0,0,0.98) !important;
+  transition:background 5s ease;
+}
+.game-shell.ending-close .s-narrate{color:#5a5050}
+.game-shell.ending-close .s-narrate p{border-left-color:rgba(100,80,80,0.2)}
+.game-shell.ending-close .g-header{border-bottom-color:rgba(60,50,50,0.2)}
+.game-shell.ending-close .keepsake-line{color:#3a3030}
+
+/* ── RIFT HINT ── */
+.rift-hint{
+  font-size:10px;color:#4a3020;font-style:italic;
+  text-align:center;padding:0.3rem 0;
+  opacity:0;animation:fadeIn 1.5s ease 2s forwards;
+}
+
 /* ── WAITING STATE ── */
 .s-waiting{
   font-style:italic;color:#8a6848;font-size:14px;
@@ -638,7 +664,9 @@ const SCENE_IMAGES = {
   observatory: 'Images/observatory.png',
   clock_tower: 'Images/clock_tower.png',
   chamber:     'Images/chamber.png',
-  rift_core:   'Images/chamber.png',
+  rift_core:   'Images/rift_core.png',
+  ending_reach:'Images/ending_reach.png',
+  ending_close:'Images/ending_close.png',
 };
 const SCENE_LABELS = {
   title:       '',
@@ -649,6 +677,8 @@ const SCENE_LABELS = {
   clock_tower: 'The Clock Tower · Third Step',
   chamber:     'The Resonance Chamber',
   rift_core:   'The Rift Core · Below the Chamber',
+  ending_reach:'',
+  ending_close:'',
 };
 
 function setScene(key) {
@@ -2387,7 +2417,7 @@ This is not a choice you can make alone. Talk through the Rift. Say what you nee
   // ═══════════════════════════════════════════════
 
   ending_reach: {
-    scene: 'rift_core',
+    scene: 'ending_reach',
     worldEvent: { ending: 'reach', game_complete: true },
     text: `You reach.
 
@@ -2428,7 +2458,7 @@ It is yours.
   },
 
   ending_close: {
-    scene: 'rift_core',
+    scene: 'ending_close',
     worldEvent: { ending: 'close', game_complete: true },
     text: `You pull your hands from the glass.
 
@@ -2484,7 +2514,8 @@ function startStory() {
 
   const opening = STORY[currentChar].opening;
   setScene(opening.scene);
-  playTheme(currentChar === 'elias' ? 'victorian' : 'modern');
+  // No ambient music during gameplay — sound effects only
+  stopTheme();
   updateKeepsakes();
   narrate(opening.text, () => showChoices(opening.choices));
 }
@@ -2599,6 +2630,9 @@ function choose(choice) {
     currentBranch = choice.next;
     visitedBranches.push(choice.next);
 
+    // Auto-save progress
+    if (currentChar) saveGame();
+
     // Fire world event
     if (branch.worldEvent) {
       typeof branch.worldEvent === 'string'
@@ -2609,8 +2643,7 @@ function choose(choice) {
     // Scene change
     const newScene = choice.scene || branch.scene;
     if (newScene) setScene(newScene);
-    if (newScene === 'chamber' || newScene === 'rift_core') playTheme('chamber');
-    else if (newScene) playTheme(currentChar === 'elias' ? 'victorian' : 'modern');
+    // No ambient music during gameplay — sound effects only
 
     updateKeepsakes();
 
@@ -2668,8 +2701,13 @@ function resolveFinalChoice(myChoice, partnerChoice) {
 
   if (myChoice === partnerChoice) {
     // Agreement — navigate to ending
-    if (myChoice === 'reach') { playSfxGlassShatter(); stopTheme(() => playEndingReach()); }
-    else { playSfxSilence(); stopTheme(() => playEndingClose()); }
+    if (myChoice === 'reach') {
+      playSfxGlassShatter(); stopTheme(() => playEndingReach());
+      document.querySelector('.game-shell').classList.add('ending-reach');
+    } else {
+      playSfxSilence(); stopTheme(() => playEndingClose());
+      document.querySelector('.game-shell').classList.add('ending-close');
+    }
     const endingKey = myChoice === 'reach' ? 'ending_reach' : 'ending_close';
     const branch = BRANCHES[endingKey];
     currentBranch = endingKey;
@@ -2756,11 +2794,14 @@ function addRiftInput() {
   if (choices.querySelector('.rift-row')) return;
   const row = document.createElement('div');
   row.className = 'rift-row';
+  const showHint = !localStorage.getItem('rift_hint_seen');
   row.innerHTML = `
+    ${showHint ? '<div class="rift-hint">Type here to send a message to your partner across the Rift</div>' : ''}
     <span class="rift-pre">Rift</span>
     <input class="rift-in" id="rift-input"
       placeholder="transmit across the Rift..." maxlength="200"
-      onkeydown="if(event.key==='Enter')sendRift()">
+      onkeydown="if(event.key==='Enter')sendRift()"
+      onfocus="localStorage.setItem('rift_hint_seen','1');var h=this.parentElement.querySelector('.rift-hint');if(h)h.remove()">
     <button class="rift-go" onclick="sendRift()">Send</button>
   `;
   choices.appendChild(row);
@@ -2901,7 +2942,8 @@ function loadGame() {
 
   const branchData = currentBranch ? BRANCHES[currentBranch] : STORY[currentChar].opening;
   setScene(branchData.scene);
-  playTheme((branchData.scene === 'chamber' || branchData.scene === 'rift_core') ? 'chamber' : (currentChar === 'elias' ? 'victorian' : 'modern'));
+  // No ambient music during gameplay — sound effects only
+  stopTheme();
   updateKeepsakes();
   narrate(branchData.text, () => showChoices(branchData.choices));
 }
