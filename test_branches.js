@@ -40,7 +40,7 @@ try {
 }
 
 const { STORY, BRANCHES, SCENE_IMAGES, SCENE_LABELS, KEEPSAKES } = data;
-const SPECIAL_NEXTS = new Set(['__restart__', '__switch__', '__act2__', '__act3__', '__reach__', '__close__']);
+const SPECIAL_NEXTS = new Set(['__restart__', '__switch__', '__act2__', '__act3__', '__reach__', '__close__', '__between__']);
 
 let errors = 0;
 let warnings = 0;
@@ -165,7 +165,7 @@ console.log('\n=== PATH WALKING ===');
   }
 
   // Also walk endings (reached via joint choice mechanic)
-  ['ending_reach', 'ending_close'].forEach(endKey => {
+  ['ending_reach', 'ending_close', 'ending_between'].forEach(endKey => {
     if (BRANCHES[endKey]) {
       walk(endKey, ['final_choice', '__reach__/__close__']);
     }

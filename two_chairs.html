@@ -519,6 +519,13 @@ body{background:var(--ink);color:var(--parchment);font-family:'EB Garamond',seri
 .game-shell.ending-close .g-header{border-bottom-color:rgba(60,50,50,0.2)}
 .game-shell.ending-close .keepsake-line{color:#3a3030}
 
+.game-shell.ending-between{
+  background:rgba(12,8,4,0.92) !important;
+  transition:background 4s ease;
+}
+.game-shell.ending-between .s-narrate{color:#d4c098}
+.game-shell.ending-between .s-narrate p{border-left-color:rgba(201,168,76,0.45)}
+
 /* ── RIFT PROMPT & GATE ── */
 .rift-prompt{
   text-align:center;padding:1.2rem;
@@ -690,6 +697,7 @@ let lastWorldSnapshot = null, worldPollTimer = null;
 let lastRiftCount = 0, riftPollTimer = null;
 let awaitingPartnerChoice = false, myFinalChoice = null;
 let riftPromptActive = false, pendingChoices = null, activeGateEvents = null;
+let finalChoiceMsgCount = 0;
 const WORLD_KEY = 'chronos_world_v3';
 
 // ═══════════════════════════════════════════════
@@ -1253,6 +1261,64 @@ function playEndingClose() {
   masterGain.gain.linearRampToValueAtTime(0, t0 + b*25); // fade to true silence
 }
 
+// Ending music — Between (sustained, warm, ongoing)
+function playEndingBetween() {
+  if (!audioCtx) return;
+  currentThemeName = 'ending_between';
+  const N = {
+    A2:110, C3:130.81, E3:164.81, F3:174.61, G3:196,
+    A3:220, C4:261.63, E4:329.63, A4:440
+  };
+  const b = 1.3;
+  function jit() { return (Math.random() - 0.5) * 0.04; }
+  function v(base) { return base * (0.88 + Math.random() * 0.24); }
+  const p = (f,t,d,vel) => pianoNote(f, t+jit(), d, v(vel));
+
+  const sentinel = audioCtx.createOscillator();
+  sentinel.frequency.setValueAtTime(0, audioCtx.currentTime);
+  const zg = audioCtx.createGain();
+  zg.gain.setValueAtTime(0, audioCtx.currentTime);
+  sentinel.connect(zg); zg.connect(masterGain);
+  sentinel.start(); currentThemeNodes.push(sentinel);
+
+  let loopNum = 0;
+  function scheduleLoop() {
+    if (currentThemeNodes.length === 0) return;
+    const t0 = audioCtx.currentTime + 0.2;
+
+    // Am — sustained warmth
+    p(N.A2, t0, b*6, 0.045);
+    p(N.E3, t0+b*0.4, b*5, 0.03);
+    p(N.A3, t0+b*0.8, b*5, 0.03);
+    p(N.C4, t0+b*1.2, b*4, 0.035);
+
+    // C — gentle shift
+    p(N.C3, t0+b*5, b*6, 0.04);
+    p(N.G3, t0+b*5.5, b*5, 0.028);
+    p(N.C4, t0+b*5.9, b*5, 0.028);
+    p(N.E4, t0+b*6.3, b*4, 0.032);
+
+    // F — warmth deepens
+    p(N.F3, t0+b*10, b*6, 0.04);
+    p(N.C3, t0+b*10.4, b*5, 0.025);
+    p(N.F3, t0+b*10.8, b*5, 0.028);
+    p(N.A3, t0+b*11.2, b*4, 0.032);
+
+    // Am — return, quiet
+    p(N.A2, t0+b*15, b*8, 0.038);
+    p(N.E3, t0+b*15.5, b*6, 0.025);
+    p(N.A3, t0+b*16, b*6, 0.025);
+    if (loopNum > 0) p(N.A4, t0+b*16.5, b*5, 0.02);
+
+    loopNum++;
+    setTimeout(scheduleLoop, b * 20 * 1000);
+  }
+
+  scheduleLoop();
+  masterGain.gain.setValueAtTime(0.05, audioCtx.currentTime);
+  masterGain.gain.linearRampToValueAtTime(0.28, audioCtx.currentTime + 4);
+}
+
 function playVictorian() {
   if (!audioCtx) return;
   // Bass drone
@@ -1489,6 +1555,10 @@ function startWorldPolling() {
           const partnerChar = currentChar === 'elias' ? 'vivienne' : 'elias';
           const partnerChoice = cur[partnerChar + '_final_choice'];
           if (partnerChoice) resolveFinalChoice(myFinalChoice, partnerChoice);
+        }
+        // Check for third path unlock at final choice
+        if ((currentBranch === 'elias_final_choice' || currentBranch === 'vivienne_final_choice') && finalChoiceMsgCount >= 3) {
+          checkThirdPath();
         }
         // Check for dependency gate unlock
         if (activeGateEvents && pendingChoices) {
@@ -2383,6 +2453,7 @@ A long pause. The glass waits.
 
   elias_final_choice: {
     scene: 'rift_core',
+    worldEvent: 'elias_at_final',
     text: `The sphere glows steadily. Through the glass, Vivienne is looking at you. She has seen the same two futures. She knows what you know.
 
 The Rift waits.
@@ -2465,6 +2536,7 @@ The glass waits.
 
   vivienne_final_choice: {
     scene: 'rift_core',
+    worldEvent: 'vivienne_at_final',
     text: `The sphere glows steadily. Through the glass, Elias is looking at you. He has seen the same futures. He knows what you know.
 
 The Rift waits.
@@ -2557,6 +2629,47 @@ It is simply quiet.
 And that is enough.
 
 — End —`,
+    choices: [
+      { text: 'Begin again — walk a different path', next: '__restart__' },
+    ],
+  },
+
+  // ═══════════════════════════════════════════════
+  // THE THIRD ENDING
+  // ═══════════════════════════════════════════════
+
+  ending_between: {
+    scene: 'rift_core',
+    worldEvent: { ending: 'between', game_complete: true },
+    text: `Eleanor's voice returns. Not from the between. Not from the machinery. From somewhere closer — as if she has been sitting in the room the entire time, waiting to see what you would do.
+
+"You're not choosing."
+
+A pause. The sphere between you doesn't shatter. Doesn't dim. It pulses — steady, warm, the rhythm of two people breathing in the same space from different centuries.
+
+"Neither of you. You're sitting in the chairs and talking instead of reaching or leaving. Henry never thought of that. He saw two options — find me, or lose me. It never occurred to him that you could just... stay."
+
+The between stirs. Not hungry. Not patient. Confused. It has never encountered anchors who refused to either open or close the channel. The machinery has no protocol for this.
+
+"The Hollow Ones will not rest. The between will not die. Blackthorn will carry its wound — both versions, both centuries, the fog and the ruins, the gas lamps and the dead electrical poles. Nothing is healed. Nothing is destroyed."
+
+A long silence. When she speaks again, her voice is different. Quieter. The voice of a woman who left someone she loved to protect him from himself, and has spent a very long time wondering if there was a third option she never saw.
+
+"But the thread holds. And you are both still here. And you are talking. And that is something Henry and I never managed."
+
+The sphere settles into a steady glow — not blazing, not dark. The amber of a candle that has been burning for a long time and will burn for a long time more.
+
+Through the glass, your eyes meet. You cannot touch. You will not walk away. You are two people in two centuries, sitting in chairs built for lovers who never arrived, and you have chosen the one thing the chairs were never designed for.
+
+To stay.
+
+Not together. Not apart. Between.
+
+The Rift hums. Quiet, steady, warm. The sound of a connection that asks for nothing and offers everything and will last exactly as long as both of you choose to sit here and keep talking through the glass.
+
+— End —
+
+The distance remains. The thread holds. Two people, a century apart, talking through glass that neither of them tried to break or darken. Sometimes the bravest choice is the one no one offers you.`,
     choices: [
       { text: 'Begin again — walk a different path', next: '__restart__' },
     ],
@@ -2715,6 +2828,10 @@ function choose(choice) {
       handleFinalChoice(choice.next === '__reach__' ? 'reach' : 'close');
       return;
     }
+    if (choice.next === '__between__') {
+      handleFinalChoice('between');
+      return;
+    }
     if (choice.next === '__act2__') {
       const act2Key = currentChar === 'elias' ? 'elias_act2_start' : 'vivienne_act2_start';
       const branch = BRANCHES[act2Key];
@@ -2810,11 +2927,14 @@ function resolveFinalChoice(myChoice, partnerChoice) {
     if (myChoice === 'reach') {
       playSfxGlassShatter(); stopTheme(() => playEndingReach());
       document.querySelector('.game-shell').classList.add('ending-reach');
-    } else {
+    } else if (myChoice === 'close') {
       playSfxSilence(); stopTheme(() => playEndingClose());
       document.querySelector('.game-shell').classList.add('ending-close');
+    } else if (myChoice === 'between') {
+      stopTheme(() => playEndingBetween());
+      document.querySelector('.game-shell').classList.add('ending-between');
     }
-    const endingKey = myChoice === 'reach' ? 'ending_reach' : 'ending_close';
+    const endingKey = myChoice === 'reach' ? 'ending_reach' : (myChoice === 'close' ? 'ending_close' : 'ending_between');
     const branch = BRANCHES[endingKey];
     currentBranch = endingKey;
     visitedBranches.push(endingKey);
@@ -2948,6 +3068,40 @@ function sendRift() {
     if (prompt) prompt.remove();
     playSfxWorldEvent();
     showChoices(pendingChoices);
+  }
+
+  // Track messages at final choice — hidden mechanic
+  if (currentBranch === 'elias_final_choice' || currentBranch === 'vivienne_final_choice') {
+    finalChoiceMsgCount++;
+    const myKey = currentChar + '_final_msgs';
+    setWorld({ [myKey]: finalChoiceMsgCount });
+    checkThirdPath();
+  }
+}
+
+function checkThirdPath() {
+  const world = getWorld();
+  const partnerChar = currentChar === 'elias' ? 'vivienne' : 'elias';
+  const partnerAtFinal = world[partnerChar + '_at_final'];
+  const partnerMsgs = world[partnerChar + '_final_msgs'] || 0;
+  if (partnerAtFinal && finalChoiceMsgCount >= 3 && partnerMsgs >= 2) {
+    // Both talking instead of choosing — reveal the third path
+    const container = document.getElementById('g-choices');
+    if (container.querySelector('.c-btn-between')) return; // already shown
+    const existing = container.querySelectorAll('.c-btn');
+    // Add third option after existing choices
+    const btn = document.createElement('button');
+    btn.className = 'c-btn c-btn-between';
+    btn.textContent = 'Stay \u2014 keep the glass between you';
+    btn.style.borderColor = 'rgba(201,168,76,0.5)';
+    btn.style.color = '#c4a878';
+    btn.style.opacity = '0';
+    btn.style.transition = 'opacity 2s ease';
+    btn.onclick = () => { playSfxChoice(); choose({ text: btn.textContent, next: '__between__' }); };
+    const rift = container.querySelector('.rift-row');
+    if (rift) container.insertBefore(btn, rift);
+    else container.appendChild(btn);
+    requestAnimationFrame(() => { btn.style.opacity = '1'; });
   }
 }
 
@@ -3112,6 +3266,7 @@ const KEEPSAKES = {
     elias_final_choice:      ['two futures', 'two prices', 'the weight of choosing'],
     ending_reach:            ['her hand in yours', 'the sound of glass shattering', 'each other'],
     ending_close:            ['a brass compass that points only north', 'silence', 'the knowledge that it was real'],
+    ending_between:          ['the glass between you', 'a steady amber glow', 'the sound of each other talking'],
   },
   vivienne: {
     _start:                    ['a press pass', 'a tape recorder'],
@@ -3140,6 +3295,7 @@ const KEEPSAKES = {
     vivienne_final_choice:     ['two futures', 'two prices', 'the weight of choosing'],
     ending_reach:              ['his hand in yours', 'the sound of glass shattering', 'each other'],
     ending_close:              ['a brass compass that points only north', 'silence', 'the knowledge that it was real'],
+    ending_between:            ['the glass between you', 'a steady amber glow', 'the sound of each other talking'],
   },
 };
 
