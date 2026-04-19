@@ -5,6 +5,8 @@
 <meta name="viewport" content="width=device-width, initial-scale=1.0">
 <title>Two Chairs</title>
 <link href="https://fonts.googleapis.com/css2?family=Cinzel+Decorative:wght@400;700&family=Cinzel:wght@400;600&family=EB+Garamond:ital,wght@0,400;0,500;1,400&display=swap" rel="stylesheet">
+<script src="https://www.gstatic.com/firebasejs/10.12.0/firebase-app-compat.js"></script>
+<script src="https://www.gstatic.com/firebasejs/10.12.0/firebase-database-compat.js"></script>
 <style>
 *,*::before,*::after{margin:0;padding:0;box-sizing:border-box}
 :root{
@@ -584,6 +586,53 @@ body{background:var(--ink);color:var(--parchment);font-family:'EB Garamond',seri
   color:var(--gold-dim);
 }
 
+/* ── ROOM SCREEN ── */
+#room-screen{background:rgba(5,3,2,0.93)}
+.room-wrap{text-align:center;max-width:400px;padding:2rem}
+.room-title{
+  font-family:'Cinzel',serif;font-size:clamp(10px,1.3vw,13px);
+  letter-spacing:0.55em;color:var(--gold-dim);
+  text-transform:uppercase;margin-bottom:2rem;
+}
+.room-code-display{
+  font-family:'Cinzel Decorative',serif;
+  font-size:clamp(32px,6vw,52px);
+  color:var(--gold);letter-spacing:0.3em;
+  margin:1.5rem 0;
+  text-shadow:0 0 40px rgba(201,168,76,0.4);
+}
+.room-sub{
+  font-size:13px;color:#8a7050;font-style:italic;
+  margin-bottom:2rem;line-height:1.7;
+}
+.room-input{
+  width:100%;padding:0.9rem 1.2rem;
+  background:rgba(15,10,5,0.85);
+  border:1px solid rgba(201,168,76,0.3);
+  color:var(--gold);font-family:'Cinzel',serif;
+  font-size:20px;letter-spacing:0.4em;
+  text-align:center;text-transform:uppercase;
+  outline:none;transition:border-color 0.3s;
+}
+.room-input:focus{border-color:var(--gold)}
+.room-input::placeholder{
+  color:#4a3520;letter-spacing:0.2em;font-size:13px;
+  text-transform:none;
+}
+.room-status{
+  font-size:12px;color:#8a7050;font-style:italic;
+  margin-top:1rem;min-height:1.4em;
+}
+.room-status.error{color:#d07070}
+.room-partner-status{
+  font-family:'Cinzel',serif;font-size:10px;
+  letter-spacing:0.3em;text-transform:uppercase;
+  color:rgba(201,168,76,0.4);
+  margin-top:1.5rem;
+  transition:color 0.5s;
+}
+.room-partner-status.connected{color:var(--gold-dim)}
+
 @media(max-width:580px){
   .char-grid{flex-direction:column;gap:1.2rem}
   .char-card{width:min(88vw,300px)}
@@ -613,9 +662,15 @@ body{background:var(--ink);color:var(--parchment);font-family:'EB Garamond',seri
     <div class="rift-divider"></div>
     <div class="title-tagline">"Time isn't broken.<br>It's bleeding."</div>
     <div style="font-family:'Cinzel',serif;font-size:clamp(9px,1.1vw,11px);letter-spacing:0.5em;color:rgba(201,168,76,0.4);text-transform:uppercase;margin-top:1.5rem;opacity:0;animation:fadeIn 1s ease 2.6s forwards">A game for two, played apart</div>
-    <button class="enter-btn" onclick="goToSelect()">Enter the Rift</button>
-    <button class="enter-btn" id="continue-btn" onclick="loadGame()" style="display:none;margin-top:0.8rem;border-color:rgba(138,26,26,0.5);color:#d08080;animation-delay:3.2s">Continue</button>
+    <button class="enter-btn" onclick="showRoomCreate()">Create a Room</button>
+    <button class="enter-btn" onclick="showRoomJoin()" style="margin-top:0.8rem;animation-delay:3.2s">Join a Room</button>
+    <button class="enter-btn" id="continue-btn" onclick="loadGame()" style="display:none;margin-top:0.8rem;border-color:rgba(138,26,26,0.5);color:#d08080;animation-delay:3.4s">Continue</button>
   </div>
+</div>
+
+<!-- ROOM SCREEN -->
+<div class="screen hidden" id="room-screen">
+  <div class="room-wrap" id="room-wrap"></div>
 </div>
 
 <!-- CHARACTER SELECT -->
@@ -701,6 +756,25 @@ let finalChoiceMsgCount = 0;
 const WORLD_KEY = 'chronos_world_v3';
 
 // ═══════════════════════════════════════════════
+//  FIREBASE
+// ═══════════════════════════════════════════════
+const firebaseConfig = {
+  apiKey: "AIzaSyAl8iO3EWMjaClP4A2BMzilaKmeuprYvwY",
+  authDomain: "two-chairs-9df28.firebaseapp.com",
+  databaseURL: "https://two-chairs-9df28-default-rtdb.firebaseio.com",
+  projectId: "two-chairs-9df28",
+  storageBucket: "two-chairs-9df28.firebasestorage.app",
+  messagingSenderId: "4960770844",
+  appId: "1:4960770844:web:74a86258d9c05daf2138d9"
+};
+firebase.initializeApp(firebaseConfig);
+const db = firebase.database();
+let roomCode = null, roomRef = null;
+let worldCache = {};
+let firebaseReady = false;
+let messageListener = null;
+
+// ═══════════════════════════════════════════════
 //  SCENE IMAGE SYSTEM
 // ═══════════════════════════════════════════════
 const SCENE_IMAGES = {
@@ -777,11 +851,117 @@ document.body.addEventListener('click', function() {
   }
 }, { once: true });
 
+// ═══════════════════════════════════════════════
+//  ROOM SYSTEM
+// ═══════════════════════════════════════════════
+function generateRoomCode() {
+  const chars = 'ABCDEFGHJKLMNPQRSTUVWXYZ23456789';
+  let code = '';
+  for (let i = 0; i < 4; i++) code += chars[Math.floor(Math.random() * chars.length)];
+  return code;
+}
+
+function showRoomCreate() {
+  showScreen('room-screen');
+  roomCode = generateRoomCode();
+  roomRef = db.ref('rooms/' + roomCode);
+  roomRef.set({ world: {}, players: {}, created: Date.now() });
+  firebaseReady = true;
+
+  const wrap = document.getElementById('room-wrap');
+  wrap.innerHTML = `
+    <div class="room-title">Your Room Code</div>
+    <div class="room-code-display">${roomCode}</div>
+    <div class="room-sub">Share this code with your partner.<br>They will enter it on their title screen.</div>
+    <button class="enter-btn" onclick="goToSelect()">Continue to Character Select</button>
+    <div class="room-partner-status" id="room-partner-status">Waiting for partner...</div>
+  `;
+
+  // Listen for partner joining
+  roomRef.child('players').on('value', snap => {
+    const players = snap.val() || {};
+    const count = Object.keys(players).length;
+    const status = document.getElementById('room-partner-status');
+    if (status) {
+      status.textContent = count >= 2 ? 'Partner connected' : 'Waiting for partner...';
+      status.classList.toggle('connected', count >= 2);
+    }
+  });
+}
+
+function showRoomJoin() {
+  showScreen('room-screen');
+  const wrap = document.getElementById('room-wrap');
+  wrap.innerHTML = `
+    <div class="room-title">Join a Room</div>
+    <input class="room-input" id="room-code-input" placeholder="enter 4-letter code" maxlength="4"
+      onkeydown="if(event.key==='Enter')joinRoom()">
+    <div style="margin-top:1.5rem">
+      <button class="enter-btn" onclick="joinRoom()">Join</button>
+    </div>
+    <div class="room-status" id="room-join-status"></div>
+  `;
+  setTimeout(() => document.getElementById('room-code-input')?.focus(), 100);
+}
+
+function joinRoom() {
+  const input = document.getElementById('room-code-input');
+  const status = document.getElementById('room-join-status');
+  if (!input) return;
+  const code = input.value.trim().toUpperCase();
+  if (code.length !== 4) {
+    status.textContent = 'Enter a 4-letter code';
+    status.classList.add('error');
+    return;
+  }
+
+  const ref = db.ref('rooms/' + code);
+  ref.once('value', snap => {
+    if (!snap.exists()) {
+      status.textContent = 'Room not found. Check the code.';
+      status.classList.add('error');
+      return;
+    }
+    roomCode = code;
+    roomRef = ref;
+    firebaseReady = true;
+    status.textContent = 'Connected!';
+    status.classList.remove('error');
+    setTimeout(() => goToSelect(), 600);
+  });
+}
+
 function goToSelect() {
   showScreen('select-screen');
+
+  // If connected to Firebase room, watch for character claiming
+  if (roomRef) {
+    roomRef.child('players').on('value', snap => {
+      const players = snap.val() || {};
+      document.querySelectorAll('.char-card').forEach(card => {
+        const char = card.classList.contains('elias') ? 'elias' : 'vivienne';
+        if (players[char]) {
+          card.style.opacity = '0.3';
+          card.style.pointerEvents = 'none';
+          const cta = card.querySelector('.char-cta');
+          if (cta) cta.textContent = 'Claimed';
+        } else {
+          card.style.opacity = '';
+          card.style.pointerEvents = '';
+          const cta = card.querySelector('.char-cta');
+          if (cta) cta.textContent = char === 'elias' ? 'Enter 1899 →' : 'Enter 1999 →';
+        }
+      });
+    });
+  }
 }
 
 function selectChar(char) {
+  // Claim character in Firebase
+  if (roomRef) {
+    roomRef.child('players/' + char).set(true);
+  }
+
   currentChar = char;
   initAudio();
 
@@ -797,8 +977,6 @@ function selectChar(char) {
     document.getElementById('world-badge').textContent = 'The Rift is open';
     document.getElementById('world-badge').classList.add('active');
   }
-
-  lastRiftCount = (world.rift_messages || []).length;
 
   showScreen('game-screen');
   startWorldPolling();
@@ -1450,20 +1628,24 @@ function playRiftChime() {
 //  WORLD STATE  (localStorage shared between windows)
 // ═══════════════════════════════════════════════
 function getWorld() {
-  try { return JSON.parse(localStorage.getItem(WORLD_KEY)) || {}; }
-  catch { return {}; }
+  return worldCache;
 }
 
 function setWorld(patch) {
-  const w = Object.assign({}, getWorld(), patch);
-  localStorage.setItem(WORLD_KEY, JSON.stringify(w));
-  broadcastWorldChange(patch);
+  if (roomRef) {
+    // Write to Firebase — listener will update worldCache
+    roomRef.child('world').update(patch);
+  } else {
+    // Fallback to localStorage for solo/offline play
+    Object.assign(worldCache, patch);
+    try { localStorage.setItem(WORLD_KEY, JSON.stringify(worldCache)); } catch(e) {}
+    broadcastWorldChange(patch);
+  }
 }
 
 function broadcastWorldChange(patch) {
   const ping = document.getElementById('shared-ping');
-  ping.classList.add('show');
-  setTimeout(() => ping.classList.remove('show'), 2500);
+  if (ping) { ping.classList.add('show'); setTimeout(() => ping.classList.remove('show'), 2500); }
   renderWorldEffects(patch);
 }
 
@@ -1536,20 +1718,18 @@ function addWorldEcho(text) {
 }
 
 function startWorldPolling() {
-  lastWorldSnapshot = JSON.stringify(getWorld());
-  clearInterval(worldPollTimer);
-  worldPollTimer = setInterval(() => {
-    const current = JSON.stringify(getWorld());
-    if (current !== lastWorldSnapshot) {
-      const prev = JSON.parse(lastWorldSnapshot);
-      const cur  = JSON.parse(current);
+  if (roomRef) {
+    // Firebase real-time listener — replaces polling
+    roomRef.child('world').on('value', snap => {
+      const cur = snap.val() || {};
+      const prev = worldCache;
       const diff = {};
       for (const k in cur) {
         if (JSON.stringify(cur[k]) !== JSON.stringify(prev[k])) diff[k] = cur[k];
       }
-      lastWorldSnapshot = current;
-      if (Object.keys(diff).length) {
-        renderWorldEffects(diff);
+      worldCache = cur;
+      if (Object.keys(diff).length && currentChar) {
+        broadcastWorldChange(diff);
         // Check for partner's final choice arriving
         if (awaitingPartnerChoice) {
           const partnerChar = currentChar === 'elias' ? 'vivienne' : 'elias';
@@ -1572,8 +1752,25 @@ function startWorldPolling() {
           }
         }
       }
-    }
-  }, 1500);
+    });
+  } else {
+    // Fallback: localStorage polling for offline/solo play
+    lastWorldSnapshot = JSON.stringify(getWorld());
+    clearInterval(worldPollTimer);
+    worldPollTimer = setInterval(() => {
+      try { worldCache = JSON.parse(localStorage.getItem(WORLD_KEY)) || {}; } catch(e) { return; }
+      const current = JSON.stringify(worldCache);
+      if (current !== lastWorldSnapshot) {
+        const prev = JSON.parse(lastWorldSnapshot);
+        const diff = {};
+        for (const k in worldCache) {
+          if (JSON.stringify(worldCache[k]) !== JSON.stringify(prev[k])) diff[k] = worldCache[k];
+        }
+        lastWorldSnapshot = current;
+        if (Object.keys(diff).length) broadcastWorldChange(diff);
+      }
+    }, 1500);
+  }
 }
 
 // ═══════════════════════════════════════════════
@@ -2802,7 +2999,9 @@ function choose(choice) {
 
   setTimeout(() => {
     if (choice.next === '__restart__') {
-      localStorage.removeItem(WORLD_KEY);
+      worldCache = {};
+      if (roomRef) roomRef.child('world').set({});
+      else localStorage.removeItem(WORLD_KEY);
       startStory();
       return;
     }
@@ -3047,10 +3246,15 @@ function sendRift() {
   const msg = input.value.trim();
   input.value = '';
 
-  const world    = getWorld();
-  const messages = world.rift_messages || [];
-  messages.push({ from: currentChar, text: msg, ts: Date.now() });
-  setWorld({ rift_messages: messages });
+  const msgObj = { from: currentChar, text: msg, ts: Date.now() };
+  if (roomRef) {
+    roomRef.child('messages').push(msgObj);
+  } else {
+    const world = getWorld();
+    const messages = world.rift_messages || [];
+    messages.push(msgObj);
+    setWorld({ rift_messages: messages });
+  }
 
   const story = document.getElementById('g-story');
   const el    = document.createElement('div');
@@ -3059,7 +3263,6 @@ function sendRift() {
   story.appendChild(el);
   requestAnimationFrame(() => el.classList.add('visible'));
   story.scrollTop = story.scrollHeight;
-  lastRiftCount = messages.length;
 
   // Unlock rift prompt if active
   if (riftPromptActive && pendingChoices) {
@@ -3106,25 +3309,48 @@ function checkThirdPath() {
 }
 
 function startRiftPolling() {
-  clearInterval(riftPollTimer);
-  riftPollTimer = setInterval(() => {
-    const messages = (getWorld().rift_messages || []);
-    if (messages.length > lastRiftCount) {
-      messages.slice(lastRiftCount).forEach(msg => {
-        if (msg.from !== currentChar) {
-          const story = document.getElementById('g-story');
-          const el    = document.createElement('div');
-          el.className = 's-block s-rift-msg';
-          el.innerHTML = `<p>${distort(msg.text)}</p>`;
-          story.appendChild(el);
-          requestAnimationFrame(() => el.classList.add('visible'));
-          story.scrollTop = story.scrollHeight;
-          playRiftChime();
-        }
-      });
-      lastRiftCount = messages.length;
-    }
-  }, 1500);
+  if (roomRef) {
+    // Firebase real-time listener for messages — instant delivery
+    if (messageListener) roomRef.child('messages').off('child_added', messageListener);
+    let initialLoad = true;
+    messageListener = roomRef.child('messages').on('child_added', snap => {
+      if (initialLoad) return; // skip messages that existed before we started listening
+      const msg = snap.val();
+      if (msg && msg.from !== currentChar) {
+        const story = document.getElementById('g-story');
+        const el    = document.createElement('div');
+        el.className = 's-block s-rift-msg';
+        el.innerHTML = `<p>${distort(msg.text)}</p>`;
+        story.appendChild(el);
+        requestAnimationFrame(() => el.classList.add('visible'));
+        story.scrollTop = story.scrollHeight;
+        playRiftChime();
+      }
+    });
+    // After initial load completes, start processing new messages
+    roomRef.child('messages').once('value', () => { initialLoad = false; });
+  } else {
+    // Fallback: localStorage polling
+    clearInterval(riftPollTimer);
+    riftPollTimer = setInterval(() => {
+      const messages = (getWorld().rift_messages || []);
+      if (messages.length > lastRiftCount) {
+        messages.slice(lastRiftCount).forEach(msg => {
+          if (msg.from !== currentChar) {
+            const story = document.getElementById('g-story');
+            const el    = document.createElement('div');
+            el.className = 's-block s-rift-msg';
+            el.innerHTML = `<p>${distort(msg.text)}</p>`;
+            story.appendChild(el);
+            requestAnimationFrame(() => el.classList.add('visible'));
+            story.scrollTop = story.scrollHeight;
+            playRiftChime();
+          }
+        });
+        lastRiftCount = messages.length;
+      }
+    }, 1500);
+  }
 }
 
 // ═══════════════════════════════════════════════
@@ -3164,6 +3390,7 @@ function saveGame() {
     world: getWorld(),
     label: label,
     ts: Date.now(),
+    roomCode: roomCode || null,
   };
   localStorage.setItem(SAVE_KEY, JSON.stringify(save));
   document.getElementById('save-status').textContent = 'Progress saved.';
@@ -3175,8 +3402,20 @@ function loadGame() {
   const save = getSave();
   if (!save) return;
 
+  // Reconnect to Firebase room if save has a room code
+  if (save.roomCode) {
+    roomCode = save.roomCode;
+    roomRef = db.ref('rooms/' + roomCode);
+    firebaseReady = true;
+    // Re-claim character
+    roomRef.child('players/' + save.character).set(true);
+  }
+
   // Restore world state
-  localStorage.setItem(WORLD_KEY, JSON.stringify(save.world));
+  worldCache = save.world || {};
+  if (!roomRef) {
+    localStorage.setItem(WORLD_KEY, JSON.stringify(save.world));
+  }
 
   // Set character
   currentChar = save.character;
@@ -3196,7 +3435,6 @@ function loadGame() {
     document.getElementById('world-badge').classList.add('active');
   }
 
-  lastRiftCount = (save.world.rift_messages || []).length;
   closeSaveModal();
   showScreen('game-screen');
   startWorldPolling();

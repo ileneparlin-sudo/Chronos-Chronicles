@@ -26,6 +26,8 @@ const strippedCode = wrappedCode
   .replace(/\(function initScene[\s\S]*?\}\)\(\);/g, '')
   .replace(/\(function checkSaveOnLoad[\s\S]*?\}\)\(\);/g, '')
   .replace(/document\.body\.addEventListener\([^)]*\)[\s\S]*?\{[^}]*\}[^)]*\);/g, '')
+  .replace(/firebase\.initializeApp[\s\S]*?;/g, '')
+  .replace(/firebase\.database\(\)/g, '{}')
   .replace(/document\.\w+/g, 'null')
   .replace(/window\.\w+/g, 'null')
   .replace(/localStorage\.\w+/g, 'null')
