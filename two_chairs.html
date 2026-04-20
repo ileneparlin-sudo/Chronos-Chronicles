@@ -484,22 +484,26 @@ body{background:var(--ink);color:var(--parchment);font-family:'EB Garamond',seri
 
 /* ── KEEPSAKE LINE ── */
 .keepsake-line{
-  padding:0.5rem 0 0.6rem;
-  border-top:1px solid rgba(201,168,76,0.08);
-  font-size:clamp(10px,1.1vw,12px);
-  color:#7a6848;font-style:italic;
-  line-height:1.6;
-  min-height:1.8em;
+  position:fixed;left:1.5rem;top:50%;z-index:12;
+  transform:translateY(-50%);
+  width:clamp(140px,14vw,180px);
+  padding:1rem 1.2rem;
+  background:rgba(5,3,2,0.88);
+  border:1px solid rgba(201,168,76,0.12);
+  font-size:clamp(11px,1.2vw,13px);
+  color:#9a8868;font-style:italic;
+  line-height:1.8;
   transition:opacity 0.6s ease;
 }
+.keepsake-line:empty{display:none}
 .keepsake-line .keepsake-label{
   font-family:'Cinzel',serif;font-size:9px;
   letter-spacing:0.25em;text-transform:uppercase;
-  color:#5a4530;font-style:normal;
-  margin-right:0.4rem;
+  color:var(--gold-dim);font-style:normal;
+  display:block;margin-bottom:0.5rem;
 }
 .keepsake-line .keepsake-items{
-  color:#9a8868;
+  color:#c0a878;display:block;
 }
 
 /* ── ENDING VISUAL SHIFTS ── */
@@ -633,6 +637,15 @@ body{background:var(--ink);color:var(--parchment);font-family:'EB Garamond',seri
 }
 .room-partner-status.connected{color:var(--gold-dim)}
 
+@media(max-width:900px){
+  .keepsake-line{
+    position:static;transform:none;width:auto;
+    padding:0.5rem 0 0.6rem;
+    background:transparent;border:none;
+    border-top:1px solid rgba(201,168,76,0.08);
+  }
+  .keepsake-line .keepsake-items{display:inline}
+}
 @media(max-width:580px){
   .char-grid{flex-direction:column;gap:1.2rem}
   .char-card{width:min(88vw,300px)}
@@ -1613,15 +1626,19 @@ function playChamber() {
 
 function playRiftChime() {
   if (!audioCtx) return;
-  const osc = audioCtx.createOscillator();
-  osc.type = 'sine';
-  osc.frequency.setValueAtTime(528, audioCtx.currentTime);
-  const g = audioCtx.createGain();
-  g.gain.setValueAtTime(0, audioCtx.currentTime);
-  g.gain.linearRampToValueAtTime(0.14, audioCtx.currentTime + 0.1);
-  g.gain.exponentialRampToValueAtTime(0.001, audioCtx.currentTime + 3);
-  osc.connect(g); g.connect(audioCtx.destination);
-  osc.start(); osc.stop(audioCtx.currentTime + 3.5);
+  const t = audioCtx.currentTime;
+  // Soft two-note chime — gentle, not jarring
+  [392, 523.25].forEach((f, i) => {
+    const osc = audioCtx.createOscillator();
+    osc.type = 'sine';
+    osc.frequency.setValueAtTime(f, t + i * 0.12);
+    const g = audioCtx.createGain();
+    g.gain.setValueAtTime(0, t + i * 0.12);
+    g.gain.linearRampToValueAtTime(0.04, t + i * 0.12 + 0.05);
+    g.gain.exponentialRampToValueAtTime(0.001, t + i * 0.12 + 1.2);
+    osc.connect(g); g.connect(audioCtx.destination);
+    osc.start(t + i * 0.12); osc.stop(t + i * 0.12 + 1.5);
+  });
 }
 
 // ═══════════════════════════════════════════════
@@ -3554,7 +3571,7 @@ function updateKeepsakes() {
     return;
   }
 
-  el.innerHTML = `<span class="keepsake-label">Carrying:</span><span class="keepsake-items">${items.join(', ')}</span>`;
+  el.innerHTML = `<span class="keepsake-label">Carrying</span><span class="keepsake-items">${items.join('<br>')}</span>`;
 }
 </script>
 </body>
