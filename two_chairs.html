@@ -637,6 +637,70 @@ body{background:var(--ink);color:var(--parchment);font-family:'EB Garamond',seri
 }
 .room-partner-status.connected{color:var(--gold-dim)}
 
+/* ── HOW TO PLAY MODAL ── */
+.howto-backdrop{
+  position:fixed;inset:0;z-index:100;
+  background:rgba(3,2,1,0.92);
+  display:flex;align-items:center;justify-content:center;
+  opacity:0;transition:opacity 0.4s ease;pointer-events:none;
+  padding:1rem;
+}
+.howto-backdrop.open{opacity:1;pointer-events:all}
+.howto-modal{
+  background:rgba(12,8,4,0.98);
+  border:1px solid rgba(201,168,76,0.3);
+  padding:2.5rem;max-width:520px;width:100%;
+  max-height:90vh;overflow-y:auto;
+  text-align:left;
+}
+.howto-modal h2{
+  font-family:'Cinzel Decorative',serif;
+  font-size:22px;color:var(--gold);
+  margin-bottom:0.3rem;letter-spacing:0.04em;
+  text-align:center;
+}
+.howto-modal .howto-sub{
+  font-size:12px;color:#8a7050;
+  font-style:italic;margin-bottom:1.8rem;
+  text-align:center;letter-spacing:0.2em;text-transform:uppercase;
+}
+.howto-modal h3{
+  font-family:'Cinzel',serif;font-size:11px;
+  letter-spacing:0.35em;color:var(--gold-dim);
+  text-transform:uppercase;margin-top:1.5rem;margin-bottom:0.6rem;
+}
+.howto-modal h3:first-of-type{margin-top:0}
+.howto-modal p, .howto-modal li{
+  font-size:14px;color:#c0a880;line-height:1.75;
+  margin-bottom:0.6rem;
+}
+.howto-modal ol{padding-left:1.3rem}
+.howto-modal .howto-highlight{color:var(--gold);font-style:italic}
+.howto-close{
+  margin-top:2rem;width:100%;padding:0.8rem;
+  background:transparent;
+  border:1px solid rgba(201,168,76,0.3);
+  color:var(--gold);
+  font-family:'Cinzel',serif;font-size:11px;
+  letter-spacing:0.3em;text-transform:uppercase;
+  cursor:pointer;transition:all 0.3s;
+}
+.howto-close:hover{
+  border-color:var(--gold);
+  background:rgba(201,168,76,0.08);
+}
+.howto-link{
+  font-family:'Cinzel',serif;font-size:10px;
+  letter-spacing:0.3em;text-transform:uppercase;
+  color:var(--gold-dim);
+  cursor:pointer;margin-top:1.2rem;display:inline-block;
+  transition:color 0.3s;
+  opacity:0;animation:fadeIn 1s ease 3.6s forwards;
+  border:none;background:none;
+  text-decoration:underline;text-underline-offset:4px;
+}
+.howto-link:hover{color:var(--gold)}
+
 @media(max-width:900px){
   .keepsake-line{
     position:static;transform:none;width:auto;
@@ -678,6 +742,36 @@ body{background:var(--ink);color:var(--parchment);font-family:'EB Garamond',seri
     <button class="enter-btn" onclick="showRoomCreate()">Create a Room</button>
     <button class="enter-btn" onclick="showRoomJoin()" style="margin-top:0.8rem;animation-delay:3.2s">Join a Room</button>
     <button class="enter-btn" id="continue-btn" onclick="loadGame()" style="display:none;margin-top:0.8rem;border-color:rgba(138,26,26,0.5);color:#d08080;animation-delay:3.4s">Continue</button>
+    <div><button class="howto-link" onclick="openHowTo()">How to Play</button></div>
+  </div>
+</div>
+
+<!-- HOW TO PLAY MODAL -->
+<div class="howto-backdrop" id="howto-modal">
+  <div class="howto-modal">
+    <h2>How to Play</h2>
+    <div class="howto-sub">A game for two, played apart</div>
+
+    <h3>The Setup</h3>
+    <p>Two Chairs is a narrative game for <span class="howto-highlight">two players</span>, each on their own device. You can play together in the same room or across the world.</p>
+    <ol>
+      <li>One of you clicks <span class="howto-highlight">Create a Room</span> and shares the 4-letter code with the other.</li>
+      <li>The other clicks <span class="howto-highlight">Join a Room</span> and enters that code.</li>
+      <li>Each of you picks a different character — Elias (1899) or Vivienne (1999).</li>
+    </ol>
+
+    <h3>Playing Together</h3>
+    <p>You each read your own story and make your own choices. You're not taking turns — you play simultaneously, at your own pace.</p>
+    <p>At the bottom of the screen is the <span class="howto-highlight">Rift</span>: type there to send a message to your partner across time. Their messages arrive distorted, as if transmitted across a century.</p>
+    <p>When your partner does something meaningful, you'll feel an echo in your own story. Sometimes the game will pause and ask you to talk before continuing. Sometimes your path will be sealed until your partner reaches a certain point. Talk. Share what you find.</p>
+
+    <h3>The Ending</h3>
+    <p>At the end, you'll both face the same final choice. Both of you must pick the same option for the ending to register. If you disagree, talk it through and decide together.</p>
+
+    <h3>Time Required</h3>
+    <p>About 60–90 minutes, total. You can save at any time and return later — click Save in the game header.</p>
+
+    <button class="howto-close" onclick="closeHowTo()">Begin</button>
   </div>
 </div>
 
@@ -855,6 +949,13 @@ function setScene(key) {
 function showScreen(id) {
   document.querySelectorAll('.screen').forEach(s => s.classList.add('hidden'));
   document.getElementById(id).classList.remove('hidden');
+}
+
+function openHowTo() {
+  document.getElementById('howto-modal').classList.add('open');
+}
+function closeHowTo() {
+  document.getElementById('howto-modal').classList.remove('open');
 }
 
 document.body.addEventListener('click', function() {
