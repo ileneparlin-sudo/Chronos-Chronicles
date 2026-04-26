@@ -3340,21 +3340,25 @@ function startStory() {
     return;
   }
 
-  const world = getWorld();
-  const myKey = currentChar + '_first_contact';
-  const partnerKey = (currentChar === 'elias' ? 'vivienne' : 'elias') + '_first_contact';
-
-  if (!world[currentChar + '_prologue_seen']) {
+  if (!getWorld()[currentChar + '_prologue_seen']) {
     showPrologue(opening);
     return;
   }
 
+  // Show the opening narration. After it lands, check whether First Contact
+  // has happened. If not, show First Contact prompt before the choices.
+  narrate(resolveText(opening.text), () => maybeShowFirstContact(opening));
+}
+
+function maybeShowFirstContact(opening) {
+  const world = getWorld();
+  const myKey = currentChar + '_first_contact';
+  const partnerKey = (currentChar === 'elias' ? 'vivienne' : 'elias') + '_first_contact';
   if (!world[myKey] || !world[partnerKey]) {
     showFirstContact(opening);
-    return;
+  } else {
+    showChoices(opening.choices);
   }
-
-  narrate(resolveText(opening.text), () => showChoices(opening.choices));
 }
 
 function showPrologue(opening) {
@@ -3406,52 +3410,60 @@ function showPrologue(opening) {
 
 function showFirstContact(opening) {
   const story = document.getElementById('g-story');
-  const partnerName = currentChar === 'elias' ? 'Vivienne' : 'Elias';
 
-  // Atmospheric opening block
-  const intro = document.createElement('div');
-  intro.className = 's-block s-narrate';
-  intro.innerHTML = `<p style="font-style:italic">The fog of your century settles around you. Somewhere across an impossible distance, the other anchor has just arrived too.</p><p style="font-style:italic">The Rift is open. It is waiting for you to use it.</p>`;
-  story.appendChild(intro);
-  requestAnimationFrame(() => intro.classList.add('visible'));
+  // Diegetic First Contact prompt — frames the action in-story.
+  // Each character's prompt matches what they just experienced in the opening.
+  const prompts = {
+    elias: {
+      label: 'Speak Into the Phonograph',
+      body: 'A voice came through the horn moments ago. Whoever spoke is somewhere far — somewhere not here. You do not know if the channel works both ways. There is only one way to find out.',
+      cta: 'speak into the rift below — anything will do',
+    },
+    vivienne: {
+      label: 'Press Record',
+      body: 'A man\'s voice came through your tape recorder, speaking your name from a place that is not here. You do not know if anyone will hear you back. There is only one way to find out.',
+      cta: 'speak into the rift below — anything will do',
+    },
+  };
+  const p = prompts[currentChar];
+  const partnerName = currentChar === 'elias' ? 'the other side' : 'the other side';
 
-  // Prompt block
   const prompt = document.createElement('div');
   prompt.className = 'rift-prompt';
   prompt.id = 'first-contact-prompt';
   prompt.innerHTML =
-    '<span class="prompt-label">First Contact</span>' +
-    'Send a message to ' + partnerName + '. Anything. The story does not begin until both of you have spoken across the Rift.' +
-    '<span class="prompt-arrow">your story will begin once both have spoken</span>' +
-    '<div class="room-partner-status" id="first-contact-status" style="margin-top:1rem">Waiting for both anchors...</div>';
+    '<span class="prompt-label">' + p.label + '</span>' +
+    p.body +
+    '<span class="prompt-arrow">' + p.cta + '</span>' +
+    '<div class="room-partner-status" id="first-contact-status" style="margin-top:1rem">listening for a voice on the other side...</div>';
   story.appendChild(prompt);
   requestAnimationFrame(() => prompt.classList.add('visible'));
+  story.scrollTop = story.scrollHeight;
 
   // Make sure rift input is visible
   const choicesEl = document.getElementById('g-choices');
   choicesEl.innerHTML = '';
   addRiftInput();
 
-  // When this player sends, mark them as having made first contact
-  // Hook into sendRift indirectly by polling the world key
+  // Poll for both-spoken state
   const checkInterval = setInterval(() => {
     const w = getWorld();
     const me = w[currentChar + '_first_contact'];
     const them = w[(currentChar === 'elias' ? 'vivienne' : 'elias') + '_first_contact'];
     const status = document.getElementById('first-contact-status');
     if (status) {
-      if (me && them) status.textContent = 'Both have spoken. The story begins...';
-      else if (me) status.textContent = 'You spoke. Waiting for ' + partnerName + '...';
-      else if (them) status.textContent = partnerName + ' has spoken. Your turn...';
-      else status.textContent = 'Waiting for both anchors...';
+      if (me && them) status.textContent = 'A voice answers. The channel is open.';
+      else if (me) status.textContent = 'you spoke. waiting for an answer...';
+      else if (them) status.textContent = 'something on the other side has spoken. answer it...';
+      else status.textContent = 'listening for a voice on the other side...';
     }
     if (me && them) {
       clearInterval(checkInterval);
       setTimeout(() => {
         const fc = document.getElementById('first-contact-prompt');
         if (fc) fc.remove();
-        intro.remove();
-        narrate(resolveText(opening.text), () => showChoices(opening.choices));
+        // Now show the choices for the opening branch
+        showChoices(opening.choices);
       }, 1800);
     }
   }, 600);
