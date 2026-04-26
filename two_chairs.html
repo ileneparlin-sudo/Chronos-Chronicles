@@ -701,6 +701,55 @@ body{background:var(--ink);color:var(--parchment);font-family:'EB Garamond',seri
 }
 .howto-link:hover{color:var(--gold)}
 
+/* ── DEBUG / MECHANICS MODE ── */
+.debug-panel{
+  position:fixed;top:0;right:0;z-index:50;
+  width:clamp(260px,28vw,340px);
+  max-height:90vh;overflow-y:auto;
+  padding:0.8rem 1rem;
+  background:rgba(0,0,0,0.92);
+  border-left:1px solid rgba(0,255,128,0.3);
+  border-bottom:1px solid rgba(0,255,128,0.3);
+  font-family:'Courier New',monospace;
+  font-size:11px;color:#7fffaf;
+  line-height:1.5;
+}
+.debug-panel h4{
+  font-size:10px;letter-spacing:0.2em;
+  color:#5fff8f;text-transform:uppercase;
+  margin-top:0.6rem;margin-bottom:0.3rem;
+  border-bottom:1px dotted rgba(0,255,128,0.2);
+}
+.debug-panel .debug-flag{
+  display:block;color:#a0e0c0;
+  padding:1px 0;font-size:10px;
+}
+.debug-panel .debug-flag.new{color:#ffff7f;font-weight:bold}
+.debug-panel .debug-current{
+  color:#ffd060;font-weight:bold;
+  word-break:break-all;
+}
+.debug-banner{
+  position:fixed;top:0;left:0;z-index:51;
+  background:rgba(0,255,128,0.15);
+  color:#7fffaf;padding:4px 12px;
+  font-family:'Courier New',monospace;
+  font-size:10px;letter-spacing:0.2em;
+  text-transform:uppercase;
+  border:1px solid rgba(0,255,128,0.4);
+  border-top:none;border-left:none;
+}
+.dynamic-text-badge{
+  display:inline-block;
+  background:rgba(255,180,0,0.25);
+  color:#ffe080;
+  padding:2px 6px;
+  font-family:'Courier New',monospace;
+  font-size:10px;
+  margin-bottom:0.5rem;
+  border:1px dashed rgba(255,180,0,0.5);
+}
+
 @media(max-width:900px){
   .keepsake-line{
     position:static;transform:none;width:auto;
@@ -861,6 +910,7 @@ let awaitingPartnerChoice = false, myFinalChoice = null;
 let riftPromptActive = false, pendingChoices = null, activeGateEvents = null;
 let finalChoiceMsgCount = 0;
 let testMode = false, testTimer = null;
+let debugMode = false;
 const WORLD_KEY = 'chronos_world_v3';
 
 // ═══════════════════════════════════════════════
@@ -1062,6 +1112,80 @@ function checkTestModeURL() {
   return null;
 }
 
+// ═══════════════════════════════════════════════
+//  DEBUG / MECHANICS MODE
+// ═══════════════════════════════════════════════
+// Activated by ?debug=1 in URL. Shows a side panel with the
+// current branch, world state flags, and highlights when a
+// branch's text was resolved from a function (cross-timeline).
+// First Contact is auto-satisfied and animations are sped up
+// so you can click through scenarios quickly.
+let lastWorldKeys = new Set();
+
+function startDebugMode() {
+  debugMode = true;
+  document.body.insertAdjacentHTML('beforeend',
+    '<div class="debug-banner">DEBUG MODE — mechanics view</div>' +
+    '<div class="debug-panel" id="debug-panel"></div>'
+  );
+  refreshDebugPanel();
+  // Auto-fire first contact so the handshake doesn't block
+  setWorld({ elias_first_contact: true, vivienne_first_contact: true });
+  // Refresh panel periodically
+  setInterval(refreshDebugPanel, 500);
+}
+
+function refreshDebugPanel() {
+  const panel = document.getElementById('debug-panel');
+  if (!panel) return;
+  const world = getWorld();
+  const currentKeys = new Set(Object.keys(world));
+  const newKeys = [...currentKeys].filter(k => !lastWorldKeys.has(k));
+
+  let html = '<h4>Current</h4>';
+  html += '<div class="debug-current">char: ' + (currentChar || '—') + '</div>';
+  html += '<div class="debug-current">branch: ' + (currentBranch || '(opening)') + '</div>';
+
+  html += '<h4>World State</h4>';
+  const flags = Object.keys(world).filter(k => k !== 'rift_messages').sort();
+  if (flags.length === 0) {
+    html += '<div class="debug-flag" style="opacity:0.5">(empty)</div>';
+  } else {
+    flags.forEach(k => {
+      const isNew = newKeys.includes(k);
+      const v = world[k];
+      const display = typeof v === 'boolean' ? (v ? '✓' : '✗') :
+                      typeof v === 'number' ? v :
+                      typeof v === 'string' ? '"' + v + '"' :
+                      JSON.stringify(v);
+      html += '<span class="debug-flag' + (isNew ? ' new' : '') + '">' + k + ' = ' + display + '</span>';
+    });
+  }
+
+  html += '<h4>Visited Branches (' + visitedBranches.length + ')</h4>';
+  if (visitedBranches.length === 0) {
+    html += '<div class="debug-flag" style="opacity:0.5">(none)</div>';
+  } else {
+    visitedBranches.slice(-12).forEach(b => {
+      html += '<span class="debug-flag">' + b + '</span>';
+    });
+  }
+
+  html += '<h4>Special Flags</h4>';
+  html += '<div class="debug-flag">awaitingPartnerChoice = ' + awaitingPartnerChoice + '</div>';
+  html += '<div class="debug-flag">myFinalChoice = ' + (myFinalChoice || '—') + '</div>';
+  html += '<div class="debug-flag">finalChoiceMsgCount = ' + finalChoiceMsgCount + '</div>';
+  html += '<div class="debug-flag">activeGateEvents = ' + (activeGateEvents ? activeGateEvents.join(',') : '—') + '</div>';
+
+  panel.innerHTML = html;
+  lastWorldKeys = currentKeys;
+}
+
+function checkDebugModeURL() {
+  const params = new URLSearchParams(window.location.search);
+  return params.get('debug') === '1' || params.get('debug') === 'true';
+}
+
 document.body.addEventListener('click', function() {
   if (!audioCtx) {
     initAudio();
@@ -1080,6 +1204,17 @@ document.body.addEventListener('click', function() {
       const hint = document.querySelector('.select-hint');
       if (hint) {
         hint.innerHTML = 'Test mode · pick <strong style="color:var(--gold)">' + (testChar === 'elias' ? 'Elias' : 'Vivienne') + '</strong> · partner is automated';
+      }
+    }, 100);
+  }
+  // Check for debug mode (mechanics view)
+  if (checkDebugModeURL()) {
+    setTimeout(() => {
+      startDebugMode();
+      showScreen('select-screen');
+      const hint = document.querySelector('.select-hint');
+      if (hint) {
+        hint.innerHTML = '<span style="color:#7fffaf">DEBUG MODE</span> — pick a character to test mechanics. World state is shown on the right.';
       }
     }, 100);
   }
@@ -3147,8 +3282,14 @@ The distance remains. The thread holds. Two people, a century apart, talking thr
 // ═══════════════════════════════════════════════
 // Resolve a text field that may be either a string or a function of world state.
 // This is what allows one player's choices to change the OTHER player's narration.
+let lastTextWasDynamic = false;
 function resolveText(t) {
-  return typeof t === 'function' ? t(getWorld()) : t;
+  if (typeof t === 'function') {
+    lastTextWasDynamic = true;
+    return t(getWorld());
+  }
+  lastTextWasDynamic = false;
+  return t;
 }
 
 function startStory() {
@@ -3242,6 +3383,11 @@ function showFirstContact(opening) {
 
 function narrate(text, callback) {
   const story = document.getElementById('g-story');
+  const wasDynamic = lastTextWasDynamic;
+
+  // In debug mode, skip the loading pulse animation
+  const loadingMs = debugMode ? 50 : 950;
+  const callbackMs = debugMode ? 50 : 500;
 
   // Loading pulse
   const loading = document.createElement('div');
@@ -3255,15 +3401,21 @@ function narrate(text, callback) {
     loading.remove();
     const block = document.createElement('div');
     block.className = 's-block s-narrate';
-    block.innerHTML = text
+    let html = text
       .split('\n\n')
       .map(p => `<p>${p.replace(/\n/g, '<br>')}</p>`)
       .join('');
+    // In debug mode, prepend a visible badge if this text came from a function
+    // (meaning the partner's choice changed it).
+    if (debugMode && wasDynamic) {
+      html = '<div class="dynamic-text-badge">▲ DYNAMIC TEXT — resolved from world state (cross-timeline consequence)</div>' + html;
+    }
+    block.innerHTML = html;
     story.appendChild(block);
     requestAnimationFrame(() => block.classList.add('visible'));
     story.scrollTop = story.scrollHeight;
-    if (callback) setTimeout(callback, 500);
-  }, 950);
+    if (callback) setTimeout(callback, callbackMs);
+  }, loadingMs);
 }
 
 function showChoices(choices) {
