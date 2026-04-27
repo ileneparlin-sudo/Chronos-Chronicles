@@ -133,7 +133,7 @@ console.log('\n=== SCENE & THEME ROUTING ===');
 
 // Check all scene transitions in branches lead to valid scenes
 const sceneRefs = [...src.matchAll(/scene:\s*'(\w+)'/g)].map(m => m[1]);
-const sceneImgKeys = [...src.matchAll(/^\s{2}(\w+):\s+'Images\//gm)].map(m => m[1]);
+const sceneImgKeys = [...src.matchAll(/^\s{2}(\w+):\s*'Images\//gm)].map(m => m[1]);
 const sceneSet = new Set(sceneImgKeys);
 const badScenes = sceneRefs.filter(s => !sceneSet.has(s));
 assert(badScenes.length === 0, `All scene references resolve (${badScenes.length === 0 ? 'OK' : 'BAD: ' + badScenes.join(', ')})`);
@@ -145,11 +145,11 @@ assert(src.includes("'modern'") && src.includes('playModern'), 'Modern theme rou
 assert(src.includes("'chamber'") && src.includes('playChamber'), 'Chamber theme routed');
 assert(src.includes("currentThemeName"), 'Theme name tracking prevents redundant replays');
 
-// Check rift_core triggers chamber theme
-assert(src.includes("'rift_core') playTheme('chamber')"), 'Rift core scene triggers chamber theme');
+// In-game ambient music was removed by design — sound effects only
+assert(src.includes('// No ambient music during gameplay'), 'Gameplay uses sound effects only (by design)');
 
-// Check title theme starts on Enter the Rift
-assert(src.includes("initAudio();\n  playTheme('title')"), 'Title theme starts on goToSelect');
+// Title theme starts on first user click anywhere
+assert(src.includes("playTheme('title')") && src.includes("body.addEventListener('click'"), 'Title theme starts on first user click');
 
 // ═══════════════════════════════════════════════
 // 6. ACT TRANSITIONS

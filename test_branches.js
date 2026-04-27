@@ -28,6 +28,8 @@ const strippedCode = wrappedCode
   .replace(/document\.body\.addEventListener\([^)]*\)[\s\S]*?\{[^}]*\}[^)]*\);/g, '')
   .replace(/firebase\.initializeApp[\s\S]*?;/g, '')
   .replace(/firebase\.database\(\)/g, '{}')
+  .replace(/new URLSearchParams\([^)]*\)/g, '({ get: () => null })')
+  .replace(/\(function checkTestMode\(\)[\s\S]*?\}\)\(\);/g, '')
   .replace(/document\.\w+/g, 'null')
   .replace(/window\.\w+/g, 'null')
   .replace(/localStorage\.\w+/g, 'null')
@@ -65,8 +67,10 @@ allBranchKeys.forEach(key => {
   }
 
   // Check text exists
-  if (!branch.text || branch.text.trim().length === 0) {
+  if (!branch.text || (typeof branch.text === 'string' && branch.text.trim().length === 0)) {
     err(`${key}: missing or empty text`);
+  } else if (typeof branch.text !== 'string' && typeof branch.text !== 'function') {
+    err(`${key}: text must be a string or function`);
   }
 
   // Check choices

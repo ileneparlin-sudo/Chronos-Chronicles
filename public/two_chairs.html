@@ -829,6 +829,23 @@ body{background:var(--ink);color:var(--parchment);font-family:'EB Garamond',seri
   <div class="room-wrap" id="room-wrap"></div>
 </div>
 
+<!-- RIFT INTRO (shared opening, plays once both players are in the room) -->
+<div class="screen hidden" id="intro-screen">
+  <div class="room-wrap" style="max-width:620px">
+    <div class="room-title" style="margin-bottom:1.5rem">Before You Begin</div>
+    <div id="intro-text" style="font-family:'EB Garamond',serif;font-size:clamp(14px,1.5vw,17px);line-height:1.85;color:#c4a878;text-align:left;font-style:italic;padding:0 0.5rem">
+      <p style="margin-bottom:1rem">In Blackthorn, Massachusetts, in two centuries that should never have touched, two strangers are about to find each other.</p>
+      <p style="margin-bottom:1rem">Not through choice. Not through any plan either of them could have made.</p>
+      <p style="margin-bottom:1rem">Through something older than choice — a crack in the architecture of time, opened by a man who wanted to find someone he loved, and who mistook longing for permission.</p>
+      <p style="margin-bottom:1rem">You are about to play across that crack. One of you will be in 1899. One of you will be in 1999. You will know the other only through fragments — a voice through a phonograph, a letter postmarked impossibly, a watch with the wrong name engraved inside.</p>
+      <p style="margin-bottom:1rem">The Rift is the channel between you. It is slow. It is strange. It is the only way you have to reach across.</p>
+      <p style="margin-bottom:1.5rem;font-style:normal;color:var(--gold);text-align:center;font-family:'Cinzel',serif;font-size:11px;letter-spacing:0.3em;text-transform:uppercase;padding-top:1rem;border-top:1px solid rgba(201,168,76,0.2)">When you speak through the Rift, you are not chatting.<br>You are speaking to a voice you do not know,<br>across a century you do not belong to.<br>Speak as if the words might not arrive.<br>Ask the things that matter.</p>
+    </div>
+    <button class="enter-btn" onclick="finishIntro()" style="margin-top:1rem">Continue to Character Select</button>
+    <div class="room-partner-status" id="intro-partner-status">Waiting for partner...</div>
+  </div>
+</div>
+
 <!-- CHARACTER SELECT -->
 <div class="screen hidden" id="select-screen">
   <div class="select-title">Choose Your Timeline</div>
@@ -1013,6 +1030,40 @@ function openHowTo() {
 }
 function closeHowTo() {
   document.getElementById('howto-modal').classList.remove('open');
+}
+
+function showClosingCard(ending) {
+  const story = document.getElementById('g-story');
+  if (!story) return;
+  const messages = {
+    reach: 'You held on. The world that held you both is gone. You are still here.',
+    close: 'You let go. You will never hear each other again. The town is quiet.',
+    between: 'You stayed. The thread holds. You are still talking.',
+  };
+  const card = document.createElement('div');
+  card.className = 's-block s-narrate';
+  card.style.cssText = 'text-align:center;padding:2rem 1rem;border-left:none;margin-top:2rem;border-top:1px solid rgba(201,168,76,0.3);border-bottom:1px solid rgba(201,168,76,0.3)';
+  card.innerHTML =
+    '<p style="font-family:\'Cinzel Decorative\',serif;font-size:24px;color:var(--gold);font-style:normal;margin-bottom:1rem">Two Chairs</p>' +
+    '<p style="font-style:italic;font-size:14px;color:#c4a878;margin-bottom:1.5rem">' + (messages[ending] || '') + '</p>' +
+    '<p style="font-family:\'Cinzel\',serif;font-size:9px;letter-spacing:0.4em;text-transform:uppercase;color:var(--gold-dim);font-style:normal;margin-bottom:0.5rem">Thank you for playing.</p>' +
+    '<p style="font-family:\'Cinzel\',serif;font-size:8px;letter-spacing:0.3em;text-transform:uppercase;color:#5a4530;font-style:normal">a game for two, played apart</p>';
+  story.appendChild(card);
+  requestAnimationFrame(() => card.classList.add('visible'));
+  story.scrollTop = story.scrollHeight;
+}
+
+function skipFirstContact() {
+  // Let the player continue solo if their partner never arrives.
+  // We mark BOTH first contact flags so the channel "resolves" for this player.
+  setWorld({ elias_first_contact: true, vivienne_first_contact: true });
+  const fc = document.getElementById('first-contact-prompt');
+  if (fc) fc.remove();
+  openingPhaseComplete = true;
+  flushPendingRiftMessages();
+  flushPendingWorldEchoes();
+  const opening = STORY[currentChar].opening;
+  setTimeout(() => showChoices(opening.choices), 600);
 }
 
 function forceUnlockGate() {
@@ -1248,7 +1299,7 @@ function showRoomCreate() {
     <div class="room-title">Your Room Code</div>
     <div class="room-code-display">${roomCode}</div>
     <div class="room-sub">Share this code with your partner.<br>They will enter it on their title screen.</div>
-    <button class="enter-btn" onclick="goToSelect()">Continue to Character Select</button>
+    <button class="enter-btn" onclick="goToIntro()">Continue</button>
     <div class="room-partner-status" id="room-partner-status">Waiting for partner...</div>
   `;
 
@@ -1302,8 +1353,35 @@ function joinRoom() {
     firebaseReady = true;
     status.textContent = 'Connected!';
     status.classList.remove('error');
-    setTimeout(() => goToSelect(), 600);
+    setTimeout(() => goToIntro(), 600);
   });
+}
+
+function goToIntro() {
+  showScreen('intro-screen');
+  // Watch for partner reaching the intro too
+  if (roomRef) {
+    roomRef.child('intro_progress').on('value', snap => {
+      const intro = snap.val() || {};
+      const count = Object.keys(intro).length;
+      const status = document.getElementById('intro-partner-status');
+      if (status) {
+        if (count >= 2) {
+          status.textContent = 'Both of you are here. The Rift is listening.';
+          status.classList.add('connected');
+        } else {
+          status.textContent = 'Waiting for partner to arrive...';
+        }
+      }
+    });
+    // Mark this player as having reached the intro
+    const myId = currentChar || ('p_' + Math.random().toString(36).slice(2, 8));
+    roomRef.child('intro_progress/' + myId).set(true);
+  }
+}
+
+function finishIntro() {
+  goToSelect();
 }
 
 function goToSelect() {
@@ -3492,10 +3570,18 @@ function showFirstContact(opening) {
     '<span class="prompt-label">' + p.label + '</span>' +
     p.body +
     '<span class="prompt-arrow">' + p.cta + '</span>' +
-    '<div class="room-partner-status" id="first-contact-status" style="margin-top:1rem">listening for a voice on the other side...</div>';
+    '<div class="room-partner-status" id="first-contact-status" style="margin-top:1rem">listening for a voice on the other side...</div>' +
+    '<button class="howto-close" id="fc-skip" style="margin-top:1rem;display:none" onclick="skipFirstContact()">Continue without your partner</button>';
   story.appendChild(prompt);
   requestAnimationFrame(() => prompt.classList.add('visible'));
   story.scrollTop = story.scrollHeight;
+
+  // After 90 seconds of waiting, offer an escape hatch in case the partner
+  // never arrives. Lets a solo player keep going.
+  setTimeout(() => {
+    const skip = document.getElementById('fc-skip');
+    if (skip) skip.style.display = '';
+  }, 90000);
 
   // Make sure rift input is visible
   const choicesEl = document.getElementById('g-choices');
@@ -3812,6 +3898,8 @@ function resolveFinalChoice(myChoice, partnerChoice) {
       stopTheme(() => playEndingBetween());
       document.querySelector('.game-shell').classList.add('ending-between');
     }
+    // After the ending narration finishes, fade in a closing card
+    setTimeout(() => showClosingCard(myChoice), 30000);
     const endingKey = myChoice === 'reach' ? 'ending_reach' : (myChoice === 'close' ? 'ending_close' : 'ending_between');
     const branch = BRANCHES[endingKey];
     currentBranch = endingKey;
